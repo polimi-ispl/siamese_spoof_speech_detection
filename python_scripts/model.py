@@ -9,6 +9,10 @@ from tensorflow.keras.utils import Sequence
 import tensorflow.keras.backend as K
 import logmelspectr_params as params
 import random
+import numpy as np
+
+from kapre.composed import get_melspectrogram_layer
+
 
 checkpoint_path='/nas/home/cborrelli/tripletloss_bot/checkpoints/vggish/vggish_model.ckpt'
 
@@ -105,58 +109,3 @@ def create_siamese_network(input_shape,
 def contrastive_loss(y_true, y_pred):
     margin = 1
     return K.mean((1 - y_true) * K.square(y_pred) + (y_true) * K.square(K.maximum(margin - y_pred, 0)))
-
-
-def get_vggish(input_shape, out_dim=2):
-    img_input = Input(shape=input_shape)
-    # Block 1
-    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1')(img_input)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool1')(x)
-
-    # Block 2
-    x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv2')(x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool2')(x)
-
-    # Block 3
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_1')(x)
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_2')(x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool3')(x)
-
-    # Block 4
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_1')(x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_2')(x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool4')(x)
-
-    # Block fc
-    x = Flatten(name='flatten')(x)
-    x = Dense(4096, activation='relu', name='fc1_1')(x)
-    x = Dense(4096, activation='relu', name='fc1_2')(x)
-
-    x = Dense(params.EMBEDDING_SIZE, activation='relu', name='fc2')(x)
-    x = Dense(out_dim, activation='softmax', name='fc3')(x)
-
-    model = Model(img_input, x, name='vggish')
-
-    # Initialize base model with VGGish weights
-    reader = tf.compat.v1.train.NewCheckpointReader(checkpoint_path)
-    var_to_shape_map = reader.get_variable_to_shape_map()
-
-    tensor_layers_list = []
-    for key in var_to_shape_map:
-        tensor_layers_list.append('/'.join(key.split('/')[:-1]))
-
-    for index, t in enumerate(tensor_layers_list):
-        weights_key = t + '/weights'
-        bias_key = t + '/biases'
-        weights = reader.get_tensor(weights_key)
-        biases = reader.get_tensor(bias_key)
-
-        keras_layer_name = t.split('/')[-1]
-        if keras_layer_name == 'logits': #or keras_layer_name == 'fc2':
-            continue
-
-        model.get_layer(keras_layer_name).set_weights([weights, biases])
-
-    return model
-
-
